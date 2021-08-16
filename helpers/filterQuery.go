@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	paramSeparator = ";"
+	paramSeparator = "."
 	expSeparator   = "_"
 )
 
@@ -46,39 +46,56 @@ func ParseFilterQueryString(filter string) bson.M {
 	// rarityscore_gte_10.2_and_lte_12.4;mainsetname_eq_Spartan;isvirgin_eq_false
 	expressions := strings.Split(filter, paramSeparator)
 	expArray := []Expression{}
+	filters := bson.M{}
 
 	for _, expression := range expressions {
 		exParts := strings.Split(expression, expSeparator)
 		if len(exParts) == 3 {
 			field, operator, value := strings.ToLower(exParts[0]), exParts[1], exParts[2]
+			// TODO: Fix this ugly ass workaround here or in the frontend
+			if value == "Bow and Arrow" {
+				value = "Bow & Arrow"
+			}
 
 			expArray = append(expArray, Expression{
 				Field:    field,
 				Operator: operator,
 				Value:    value,
 			})
-		} else if len(exParts) == 6 {
-			field, operator, value, join, operator2, value2 := strings.ToLower(exParts[0]), exParts[1], exParts[2], exParts[3], exParts[4], exParts[5]
-
-			expArray = append(expArray, Expression{
-				Field:     field,
-				Operator:  operator,
-				Value:     value,
-				Join:      join,
-				Operator2: operator2,
-				Value2:    value2,
-			})
-
+		} else if len(exParts) > 3 {
+			field, _, values := strings.ToLower(exParts[0]), exParts[1], exParts[2:]
+			aBson := bson.A{}
+			for _, value := range values {
+				// TODO: Fix this ugly ass work around here or in the frontend
+				if value == "Bow and Arrow" {
+					value = "Bow & Arrow"
+				}
+				bson := createEqBson(field, value)
+				aBson = append(aBson, bson)
+			}
+			filters["$or"] = aBson
 		}
+		// if len(exParts) == 6 {
+		// 	field, operator, value, join, operator2, value2 := strings.ToLower(exParts[0]), exParts[1], exParts[2], exParts[3], exParts[4], exParts[5]
+
+		// 	expArray = append(expArray, Expression{
+		// 		Field:     field,
+		// 		Operator:  operator,
+		// 		Value:     value,
+		// 		Join:      join,
+		// 		Operator2: operator2,
+		// 		Value2:    value2,
+		// 	})
+
+		// }
 	}
 
-	filters := buildFilter(expArray)
+	filters = buildFilter(expArray, filters)
 	return filters
 }
 
 // buildFilter iterates over each parsed expression, parses it, creates a mongodb query and appends it to global filter query
-func buildFilter(expressions []Expression) bson.M {
-	filter := bson.M{}
+func buildFilter(expressions []Expression, filter bson.M) bson.M {
 	for _, exp := range expressions {
 		switch exp.Join {
 		case "":
@@ -110,6 +127,7 @@ func buildFilter(expressions []Expression) bson.M {
 // createEqBson creates a mongodb filter if the operator is "eq"
 func createEqBson(field string, value string) bson.M {
 	returnBson := bson.M{}
+	log.Println(value)
 	if value == "true" || value == "false" {
 		boolValue, err := strconv.ParseBool(value)
 		if err != nil {
