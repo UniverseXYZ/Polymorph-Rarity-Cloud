@@ -55,6 +55,12 @@ func ParseFilterQueryString(filter string) bson.M {
 			// TODO: Fix this ugly ass workaround here or in the frontend
 			if value == "Bow and Arrow" {
 				value = "Bow & Arrow"
+			} else if value == "Bow Tie and Suit" {
+				value = "Bow Tie & Suit"
+			} else if value == "Suit and Tie" {
+				value = "Suit & Tie"
+			} else if value == "Tennis Socks and Shoes" {
+				value = "Tennis Socks & Shoes"
 			}
 
 			expArray = append(expArray, Expression{
@@ -66,9 +72,15 @@ func ParseFilterQueryString(filter string) bson.M {
 			field, _, values := strings.ToLower(exParts[0]), exParts[1], exParts[2:]
 			aBson := bson.A{}
 			for _, value := range values {
-				// TODO: Fix this ugly ass work around here or in the frontend
+				// TODO: Fix this ugly ass workaround here or in the frontend
 				if value == "Bow and Arrow" {
 					value = "Bow & Arrow"
+				} else if value == "Bow Tie and Suit" {
+					value = "Bow Tie & Suit"
+				} else if value == "Suit and Tie" {
+					value = "Suit & Tie"
+				} else if value == "Tennis Socks and Shoes" {
+					value = "Tennis Socks & Shoes"
 				}
 				bson := createEqBson(field, value)
 				aBson = append(aBson, bson)
