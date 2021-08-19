@@ -53,22 +53,11 @@ func GetPolymorphs(polymorphDBName string, rarityCollectionName string) func(w h
 		sortDir := r.URL.Query().Get("sortDir")
 		search := r.URL.Query().Get("search")
 		filter := r.URL.Query().Get("filter")
+		ids := r.URL.Query().Get("ids")
 
-		var filters, searchFilters, aggrFilters = bson.M{}, bson.M{}, bson.M{}
-
-		if search != "" {
-			searchFilters = helpers.ParseSearchQueryString(search)
-			for k, v := range searchFilters {
-				aggrFilters[k] = v
-			}
-
-		}
-
-		if filter != "" {
-			filters = helpers.ParseFilterQueryString(filter)
-			for k, v := range filters {
-				aggrFilters[k] = v
-			}
+		var filters = bson.M{}
+		if filter != "" || ids != "" || search != "" {
+			filters = helpers.ParseFilterQueryString(filter, ids, search)
 		}
 
 		var findOptions options.FindOptions
@@ -100,7 +89,7 @@ func GetPolymorphs(polymorphDBName string, rarityCollectionName string) func(w h
 			findOptions.SetSort(bson.M{constants.MorphFieldNames.TokenId: sortDirInt})
 		}
 
-		curr, err := collection.Find(context.Background(), aggrFilters, &findOptions)
+		curr, err := collection.Find(context.Background(), filters, &findOptions)
 		if err != nil {
 			render.Status(r, 500)
 			render.JSON(w, r, err)
