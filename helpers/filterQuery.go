@@ -55,8 +55,8 @@ func ParseFilterQueryString(filter string, ids string, search string) bson.M {
 
 // buildFilter iterates over each parsed expression, parses it, creates a mongodb query and appends it to a global "$and" query
 func buildFilters(expressions []Expression, ids string, search string) bson.M {
-	searchFilters, finalFilter, orIdsFilter, orTraitsFilter := bson.M{}, bson.M{}, bson.M{}, bson.M{}
-	idsFilterArray, traitFilterArrays, finalFiltersArray := bson.A{}, bson.A{}, bson.A{}
+	searchFilters, finalFilter, orIdsFilter := bson.M{}, bson.M{}, bson.M{}
+	idsFilterArray, finalFiltersArray := bson.A{}, bson.A{}
 
 	//Parse and build search filter query
 	if search != "" {
@@ -73,15 +73,22 @@ func buildFilters(expressions []Expression, ids string, search string) bson.M {
 	}
 
 	for _, exp := range expressions {
-		for _, trait := range exp.Values {
-			trait = fixTraitNames(trait)
+		if len(exp.Values) == 1 {
+			trait := fixTraitNames(exp.Values[0])
 			traitFilter := createEqBson(exp.Field, trait)
-			traitFilterArrays = append(traitFilterArrays, traitFilter)
-		}
-		orTraitsFilter["$or"] = traitFilterArrays
-		finalFiltersArray = append(finalFiltersArray, orTraitsFilter)
-	}
+			finalFiltersArray = append(finalFiltersArray, traitFilter)
+		} else if len(exp.Values) > 1 {
+			orTraitsFilterArray, orFinalFilter := bson.A{}, bson.M{}
+			for _, trait := range exp.Values {
+				trait = fixTraitNames(trait)
+				traitFilter := createEqBson(exp.Field, trait)
+				orTraitsFilterArray = append(orTraitsFilterArray, traitFilter)
+			}
+			orFinalFilter["$or"] = orTraitsFilterArray
+			finalFiltersArray = append(finalFiltersArray, orFinalFilter)
 
+		}
+	}
 	finalFilter["$and"] = finalFiltersArray
 	return finalFilter
 }
