@@ -47,6 +47,9 @@ func GetPolymorphs(polymorphDBName string, rarityCollectionName string) func(w h
 			log.Errorln(err)
 			return
 		}
+
+		defer disconnectDB()
+
 		page := r.URL.Query().Get("page")
 		take := r.URL.Query().Get("take")
 		sortField := r.URL.Query().Get("sortField")
@@ -107,15 +110,18 @@ func GetPolymorphs(polymorphDBName string, rarityCollectionName string) func(w h
 			render.JSON(w, r, []bson.M{})
 		}
 
-		client := db.ConnectToDb()
-		err = client.Disconnect(context.Background())
-		if err != nil {
-			log.Errorln(err)
-		} else {
-			log.Println("Connection to MongoDB closed.")
-		}
-
 	}
+}
+
+func disconnectDB() {
+	client := db.ConnectToDb()
+	err := client.Disconnect(context.Background())
+	if err != nil {
+		log.Errorln(err)
+	} else {
+		log.Println("Connection to MongoDB closed.")
+	}
+
 }
 
 // removePrivateFields removes internal fields that are of no interest to the users of the API.
