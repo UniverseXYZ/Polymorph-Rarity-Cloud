@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -12,43 +13,55 @@ import (
 
 var client *mongo.Client
 
+const (
+	// Timeout operations after N seconds
+	connectTimeout  = 5
+	queryTimeout    = 30
+	
+	// Which instances to read from
+	readPreference           = "secondaryPreferred"
+	connectionStringTemplate = "mongodb://%s:%s@%s/test?replicaSet=rs0&readpreference=%s&connect=direct&sslInsecure=true&retryWrites=false"
+)
+
 // ConnectToDb retrieves db config from .env and tries to conenct to the database.
 func ConnectToDb() *mongo.Client {
-	if client != nil {
-		log.Println("Fetching existing client")
-		err := client.Ping(context.Background(), nil)
-		if err == nil {
-			return client
-		}	
-	}
-
 	username := os.Getenv("USERNAME")
 	password := os.Getenv("PASSWORD")
 	dbUrl := os.Getenv("DB_URL")
 
 	if username == "" {
-		log.Errorln("Missing username in .env")
+		log.Fatalln("Missing username in .env")
 	}
 	if password == "" {
-		log.Errorln("Missing password in .env")
+		log.Fatalln("Missing password in .env")
 	}
 	if dbUrl == "" {
-		log.Errorln("Missing db url in .env")
+		log.Fatalln("Missing db url in .env")
 	}
 
-	connectionStr := "mongodb+srv://" + username + ":" + password + "@" + dbUrl + "?retryWrites=true&w=majority"
-	var err error
-	client, err = mongo.Connect(context.Background(), options.Client().ApplyURI(connectionStr))
+	connectionURI := fmt.Sprintf(connectionStringTemplate, username, password, dbUrl, readPreference)
+
+	client, err := mongo.NewClient(options.Client().ApplyURI(connectionURI))
 	if err != nil {
-		log.Errorln(err)
+		log.Fatalf("Failed to create client: %v", err)
 	}
 
-	// check the connection
-	err = client.Ping(context.Background(), nil)
+	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout*time.Second)
+	defer cancel()
+
+	err = client.Connect(ctx)
 	if err != nil {
-		log.Errorln(err)
+		log.Fatalf("Failed to connect to cluster: %v", err)
 	}
-	log.Println("Connected to mongo client")
+
+	// Force a connection to verify our connection string
+	err = client.Ping(ctx, nil)
+	if err != nil {
+		log.Fatalf("Failed to ping cluster: %v", err)
+	}
+	
+	fmt.Println("Connected to DocumentDB!")
+
 	return client
 }
 

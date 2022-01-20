@@ -2,17 +2,19 @@ package handlers
 
 import (
 	"context"
-	"net/http"
+	"encoding/json"
+	"net/url"
+	"os"
 	"strconv"
 
-	"github.com/go-chi/render"
-	log "github.com/sirupsen/logrus"
 	"github.com/vikinatora/rarity-cloud-function/config"
 	"github.com/vikinatora/rarity-cloud-function/constants"
 	"github.com/vikinatora/rarity-cloud-function/db"
 	"github.com/vikinatora/rarity-cloud-function/helpers"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"github.com/aws/aws-lambda-go/events"
 )
 
 // GetPolymorphs endpoints returns polymorphs based on different filters that can be applied.
@@ -38,25 +40,54 @@ import (
 //		See helpers.ParseFilterQueryString() for more information.
 //
 //		Example filter query: "rarityscore_gte_13.2_and_lte_20;isvirgin_eq_true;"
-func GetPolymorphs(polymorphDBName string, rarityCollectionName string) func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
+func GetPolymorphs(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+		polymorphDBName := os.Getenv("POLYMORPH_DB")
+		rarityCollectionName := os.Getenv("RARITY_COLLECTION")
+
+		// Connect to DB
 		collection, err := db.GetMongoDbCollection(polymorphDBName, rarityCollectionName)
 		if err != nil {
-			render.Status(r, 500)
-			render.JSON(w, r, err)
-			log.Errorln(err)
-			return
+			return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 503}, nil
 		}
 
+		// Close connection to DB at the end of the function execution
 		defer db.DisconnectDB()
+		
+		// Parse query params
+		page, err := parseQueryParam("page", request)
+		if err != nil {
+			return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 503}, nil
+		}
 
-		page := r.URL.Query().Get("page")
-		take := r.URL.Query().Get("take")
-		sortField := r.URL.Query().Get("sortField")
-		sortDir := r.URL.Query().Get("sortDir")
-		search := r.URL.Query().Get("search")
-		filter := r.URL.Query().Get("filter")
-		ids := r.URL.Query().Get("ids")
+		take, err := parseQueryParam("take", request)
+		if err != nil {
+			return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 503}, nil
+		}
+
+		sortField, err := parseQueryParam("sortField", request)
+		if err != nil {
+			return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 503}, nil
+		}
+
+		sortDir, err := parseQueryParam("sortDir", request)
+		if err != nil {
+			return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 503}, nil
+		}
+
+		search, err := parseQueryParam("search", request)
+		if err != nil {
+			return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 503}, nil
+		}
+
+		filter, err := parseQueryParam("filter", request)
+		if err != nil {
+			return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 503}, nil
+		}
+
+		ids, err := parseQueryParam("ids", request)
+		if err != nil {
+			return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 503}, nil
+		}
 
 		var filters = bson.M{}
 		if filter != "" || ids != "" || search != "" {
@@ -94,23 +125,26 @@ func GetPolymorphs(polymorphDBName string, rarityCollectionName string) func(w h
 
 		curr, err := collection.Find(context.Background(), filters, &findOptions)
 		if err != nil {
-			render.Status(r, 500)
-			render.JSON(w, r, err)
-			log.Println(err)
+			return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 503}, nil
 		}
 
 		defer curr.Close(context.Background())
 
 		var results []bson.M
-		// var jsonResults []byte
 		curr.All(context.Background(), &results)
+	
 		if results != nil {
-			render.JSON(w, r, results)
+			content, err := json.Marshal(results)
+			if err != nil {
+				return events.APIGatewayProxyResponse{Body: err.Error(), StatusCode: 503}, nil
+			}
+			jsonResponse := string(content)
+		
+			return events.APIGatewayProxyResponse{ Headers: map[string]string{"Content-Type": "application/json"}, Body: jsonResponse, StatusCode: 200}, nil
 		} else {
-			render.JSON(w, r, []bson.M{})
+			return events.APIGatewayProxyResponse{Headers: map[string]string{"Content-Type": "application/json"}, Body: "", StatusCode: 200}, nil
 		}
 
-	}
 }
 
 // removePrivateFields removes internal fields that are of no interest to the users of the API.
@@ -122,4 +156,19 @@ func removePrivateFields(findOptions *options.FindOptions) {
 		noProjectionFields[field] = 0
 	}
 	findOptions.SetProjection(noProjectionFields)
+}
+
+func parseQueryParam(queryParam string, request events.APIGatewayProxyRequest ) (string, error) {
+	pageValue, found := request.QueryStringParameters[queryParam]
+
+	if found {
+		// query parameters are typically URL encoded so to get the value
+		value, err := url.QueryUnescape(pageValue)
+		if err != nil {
+			return "", err
+		}
+		return value, nil
+	}
+
+	return "", nil
 }
